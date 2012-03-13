@@ -1,10 +1,10 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 #
-#	  construct_codes.py
+#	  ecoc.py
 #
 #	  Frederik Vaassen <frederik.vaassen@ua.ac.be>
-#	  Copyright 2011 CLiPS Research Center
+#	  Copyright 2012 CLiPS Research Center
 #
 #	  This program is free software; you can redistribute it and/or modify
 #	  it under the terms of the GNU General Public License as published by
@@ -635,12 +635,14 @@ the resulting labels and probabilities to output_folder/fold-XX/*.predictions.''
 		from svmutil import svm_read_problem as read_problem
 		from svmutil import svm_train as train
 		from svmutil import svm_save_model as save_model
+		from svmutil import svm_load_model as load_model
 		from svmutil import svm_predict as predict
 	elif options.classifier == 'liblinear':
 		sys.path.insert(0, os.path.join(liblinearpath, 'python'))
 		from liblinearutil import read_problem
 		from liblinearutil import train
 		from liblinearutil import save_model
+		from liblinearutil import load_model
 		from liblinearutil import predict
 
 	main(input_folder, output_folder, ecoc_type=options.ecoc_type, pattern=options.pattern, params=params, reuse_models=options.reuse_models)
