@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<parameters>
+	<task-params id="1">
+		<task-param key="c">0.03125</task-param>
+		<task-param key="g">0.0078125</task-param>
+	</task-params>
+	<task-params id="2">
+		<task-param key="c">512.0</task-param>
+		<task-param key="g">0.5</task-param>
+	</task-params>
+	<task-params id="3">
+		<task-param key="c">0.03125</task-param>
+		<task-param key="g">0.0078125</task-param>
+	</task-params>
+	<task-params id="4">
+		<task-param key="c">0.03125</task-param>
+		<task-param key="g">0.0078125</task-param>
+	</task-params>
+	<task-params id="5">
+		<task-param key="c">2.0</task-param>
+		<task-param key="g">8.0</task-param>
+	</task-params>
+	<task-params id="6">
+		<task-param key="c">0.03125</task-param>
+		<task-param key="g">0.0078125</task-param>
+	</task-params>
+	<task-params id="7">
+		<task-param key="c">0.03125</task-param>
+		<task-param key="g">0.0078125</task-param>
+	</task-params>
+</parameters>

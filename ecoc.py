@@ -105,48 +105,12 @@ import operator
 from random import shuffle
 from optparse import OptionParser
 from itertools import combinations
+from xml.etree.ElementTree import ElementTree
 
 liblinearpath = '/home/frederik/Tools/liblinear-1.8'
 libsvmpath = '/home/frederik/Tools/libsvm-3.11'
 
-def calculate_separation(matrix):
-	'''
-	Calculates the minimum Hamming distances between rows and columns in a
-	matrix and calculates its error-correcting capacity.
-
-	'''
-	if isinstance(matrix, dict):
-		keys = []
-		values = []
-		for key, value in matrix.items():
-			keys.append(key)
-			values.append(value)
-		matrix = values
-
-	min_row = 9999
-	for index, row1 in enumerate(matrix):
-		tempmatrix = matrix[:]
-		del(tempmatrix[index])
-		for index2, row2 in enumerate(tempmatrix):
-			d = sum(e1 != e2 for e1, e2 in zip(row1, row2))
-			if d < min_row:
-				min_row = d
-	hd = int((min_row - 1)/2)
-	if hd < 0:
-		hd = 0
-
-	min_col = 9999
-	for index, col1 in enumerate(zip(*matrix)):
-		tempmatrix = zip(*matrix)
-		del(tempmatrix[index])
-		for col2 in tempmatrix:
-			d = sum(e1 != e2 for e1, e2 in zip(col1, col2))
-			if d < min_col:
-				min_col = d
-
-	print 'Minimum row Hamming distance: {0}.'.format(min_row)
-	print 'Minimum column Hamming distance: {0}.'.format(min_col)
-	print 'These output codes (of length {2}) will correct {0} incorrect bits ({1:2.2f}% of the total amount of classifiers).\n'.format(hd, 100*hd/float(len(matrix[0])), len(matrix[0]))
+classifier = 'libsvm'
 
 def onevsall(label_map):
 	'''
@@ -263,116 +227,45 @@ def getSubtasks(matrix, size=None):
 
 	return tasks
 
-def trainTasks(train_file, tasks, fold_num, output_folder=None, params={'-c': 1}):
+def calculate_separation(matrix):
 	'''
-	Given a training instance file and a list of tasks, adapt the training
-	vectors to fit the tasks and build an SVM model for each of them.
-
-	'''
-	if not output_folder:
-		output_folder = 'models'
-	output_folder = os.path.join(output_folder, 'fold-{0:02d}'.format(fold_num+1))
-	if not os.path.exists(output_folder):
-		os.makedirs(output_folder)
-
-	model_files = []
-	labels, instances = read_problem(train_file)
-	for i, task in enumerate(tasks):
-		print '---training task {0:03d}/{1:03d}'.format(i+1,len(tasks))
-		new_labels = [int(task[label]) for label in labels]
-
-		paramstring = ''
-		for param, value in params.items():
-			paramstring += ' {0} {1}'.format(param, value)
-		paramstring += ' -q'
-
-		model_file = os.path.join(output_folder, os.path.basename(train_file) + '.task{0:03d}.model'.format(i+1))
-		model = train(new_labels, instances, paramstring)
-		save_model(model_file, model)
-
-		model_files.append(model_file)
-
-	return model_files
-
-def normalizePrediction(value):
-	'''
-	Normalize the decision value to a value between 0 and 1.
+	Calculates the minimum Hamming distances between rows and columns in a
+	matrix and calculates its error-correcting capacity.
 
 	'''
-	value = math.atan(value)/math.pi + 0.5
-	return value
+	if isinstance(matrix, dict):
+		keys = []
+		values = []
+		for key, value in matrix.items():
+			keys.append(key)
+			values.append(value)
+		matrix = values
 
-def getPredictions(test_file, tasks, model_files):
-	'''
-	Returns probability values of the +1 class per task as well as task
-	accuracies (classification accuracies per task).
+	min_row = 9999
+	for index, row1 in enumerate(matrix):
+		tempmatrix = matrix[:]
+		del(tempmatrix[index])
+		for index2, row2 in enumerate(tempmatrix):
+			d = sum(e1 != e2 for e1, e2 in zip(row1, row2))
+			if d < min_row:
+				min_row = d
+	hd = int((min_row - 1)/2)
+	if hd < 0:
+		hd = 0
 
-	Requires a test instance file, a list of tasks, and corresponding model
-	files. Transform the vectors to fit the tasks and classifies them against
-	the matching SVM model.
+	min_col = 9999
+	for index, col1 in enumerate(zip(*matrix)):
+		tempmatrix = zip(*matrix)
+		del(tempmatrix[index])
+		for col2 in tempmatrix:
+			d = sum(e1 != e2 for e1, e2 in zip(col1, col2))
+			if d < min_col:
+				min_col = d
 
-	'''
-	assert len(tasks) == len(model_files), 'Not as many model files as tasks'
-
-	labels, instances = read_problem(test_file)
-
-	models = []
-	print '---Loading models...'
-	for model_file in model_files:
-		models.append(load_model(model_file))
-	print '---Done.'
-
-	task_accuracies = [0.0 for _ in range(len(tasks))]
-
-	predictions = []
-	for label, instance in zip(labels, instances):
-		instance_predictions = []
-		for i, (model, task) in enumerate(zip(models, tasks)):
-			new_label = int(task[label])
-
-			pred_labels, ACC, pred_values, label_order = predict([new_label], [instance], model)
-			assert len(pred_values[0]) == 1
-			pred_value = pred_values[0][0]
-
-			# If the label order is reversed, reverse the sign of the distance value.
-			if label_order == [-1, 1]:
-				pred_value = -pred_value
-			# Normalize the value and add it to the instance predictions.
-			instance_predictions.append(normalizePrediction(pred_value))
-
-			# Add one if the prediction was accurate
-			if new_label == pred_labels[0]:
-				task_accuracies[i] += 1
-
-		predictions.append(instance_predictions)
-
-	task_accuracies = [score/len(instances) for score in task_accuracies]
-
-	return predictions, task_accuracies
-
-def hamming(list1, list2):
-	'''
-	Calculate the Hamming distance between two lists.
-
-	'''
-	return sum([i != j for i,j in zip(list1, list2)])
-
-def euclidian(list1, list2):
-	'''
-	Calculate the Euclidian distance between two lists.
-
-	'''
-	return math.sqrt(sum((i - j)**2 for i, j in zip(list1, list2)))
-
-def decode(prediction, codewords, mode=euclidian):
-	'''
-	Decode a prediction against a dictionary of codewords.
-
-	'''
-	distances = sorted([(label, mode(prediction, codeword)) for label, codeword in codewords.items()], key=operator.itemgetter(1))
-	at_minimum = [label for (label, distance) in distances if distance == distances[0][1]]
-
-	return at_minimum
+	print
+	print 'Minimum row Hamming distance: {0}.'.format(min_row)
+	print 'Minimum column Hamming distance: {0}.'.format(min_col)
+	print 'These output codes (of length {2}) will correct {0} incorrect bits ({1:2.2f}% of the total amount of classifiers).\n'.format(hd, 100*hd/float(len(matrix[0])), len(matrix[0]))
 
 def getLabelMap(folder):
 	'''
@@ -431,27 +324,60 @@ def getInstances(folder, pattern=None):
 
 	return instances
 
-def evaluate(predictions, codewords, label_map, output_file):
+def readParams(xml_file):
 	'''
-	Given a list of predictions by all dichotomizers, decode the label using the
-	codewords and write the decoded labels followed by the predictions to
-	output_file.
+	Read the XML file containing task parameters.
 
 	'''
-	if not os.path.exists(os.path.split(output_file)[0]):
-		os.makedirs(os.path.split(output_file)[0])
+	parameters = []
+	tree = ElementTree()
+	tree.parse(xml_file)
+	# Find all task-params nodes and sort them by id.
+	tasks = sorted([(int(t.attrib['id']), t) for t in tree.findall('task-params')])
+	tasks = [t for (idx, t) in tasks]
 
-	pred_labels = []
-	with open(output_file, 'w') as fout:
-		for i, prediction in enumerate(predictions):
-			labels = decode(prediction, codewords, euclidian)
-			if len(labels) > 1:
-				print '---Warning, multiple possible labels for instance {0}: {1}'.format(i, ' '.join(labels))
-				shuffle(labels)
-			pred_labels.append(labels[0])
-			fout.write('{0}\t{1}\n'.format(label_map[labels[0]], '\t'.join(map(str, prediction))))
-		print 'Predictions written to {0}.'.format(output_file)
-	return pred_labels
+	for task in tasks:
+		parameters.append(dict([('-'+p.attrib['key'].lstrip('-'), p.text) for p in task.findall('task-param')]))
+
+	return parameters
+
+def trainTasks(train_file, tasks, fold_num, output_folder=None, param_file='params.xml'):
+	'''
+	Given a training instance file and a list of tasks, adapt the training
+	vectors to fit the tasks and build an SVM model for each of them.
+
+	'''
+	global classifier
+	if not output_folder:
+		output_folder = 'models'
+	output_folder = os.path.join(output_folder, 'fold-{0:02d}'.format(fold_num+1))
+	if not os.path.exists(output_folder):
+		os.makedirs(output_folder)
+
+	parameters = readParams(param_file)
+	assert len(parameters) == len(tasks), 'The parameters file contains parameters for {0} tasks, whereas there are {1}.'.format(len(parameters), len(tasks))
+
+	model_files = []
+	labels, instances = read_problem(train_file)
+	for i, task in enumerate(tasks):
+		print '---training task {0:03d}/{1:03d}'.format(i+1,len(tasks))
+		new_labels = [int(task[label]) for label in labels]
+
+		params = parameters[i]
+		paramstring = ''
+		for param, value in params.items():
+			paramstring += ' {0} {1}'.format(param, value)
+		if classifier == 'libsvm' and '-b' not in params.keys():
+			paramstring += ' -b 1'
+		paramstring += ' -q'
+
+		model_file = os.path.join(output_folder, os.path.basename(train_file) + '.task{0:03d}.model'.format(i+1))
+		model = train(new_labels, instances, paramstring)
+		save_model(model_file, model)
+
+		model_files.append(model_file)
+
+	return model_files
 
 def getModelFiles(folder):
 	'''
@@ -473,17 +399,163 @@ def getModelFiles(folder):
 
 	return models
 
+def normalizePrediction(value):
+	'''
+	Normalize the decision value to a value between 0 and 1.
+
+	'''
+	value = math.atan(value)/math.pi + 0.5
+	return value
+
+def getPredictions(test_file, tasks, model_files, fold_num, debug=False):
+	'''
+	Returns probability values of the +1 class per task as well as task
+	accuracies (classification accuracies per task).
+
+	Requires a test instance file, a list of tasks, and corresponding model
+	files. Transform the vectors to fit the tasks and classifies them against
+	the matching SVM model.
+
+	'''
+	assert len(tasks) == len(model_files), 'Not as many model files as tasks'
+
+	labels, instances = read_problem(test_file)
+
+	models = []
+	print '---Loading models...'
+	for model_file in model_files:
+		models.append(load_model(model_file))
+
+	task_accuracies = [0.0 for _ in range(len(tasks))]
+
+	print '---Classifying instances...'
+	predictions = []
+
+	if debug:
+		debug_files = [open(os.path.basename(test_file) + '.fold{0:02d}.task{1:03d}.test'.format(fold_num+1, i+1), 'w') for i in range(len(tasks))]
+	for label, instance in zip(labels, instances):
+		instance_predictions = []
+		for i, (model, task) in enumerate(zip(models, tasks)):
+			new_label = int(task[label])
+
+			if debug:
+				o_instance = [':'.join([str(idx), str(val)]) for idx, val in sorted(instance.items())]
+				debug_files[i].write('{0} {1}\n'.format(new_label, ' '.join(o_instance)))
+
+			global classifier
+			if classifier == 'liblinear':
+				pred_labels, ACC, pred_values, label_order = predict([new_label], [instance], model)
+				assert len(pred_values[0]) == 1
+				pred_value = pred_values[0][0]
+				# If the label order is reversed, reverse the sign of the distance value.
+				if label_order == [-1, 1]:
+					pred_value = -pred_value
+				# Normalize the value if it's not a probability value.
+				pred_value = normalizePrediction(pred_value)
+			elif classifier == 'libsvm':
+				pred_labels, (ACC, MSC, SCC), pred_values = predict([new_label], [instance], model, options='-b 1')
+				label_order = model.get_labels()
+				pred_value = pred_values[0][label_order.index(1)]
+
+			# Add the value to the instance predictions.
+			instance_predictions.append(pred_value)
+
+			# Add one if the prediction was accurate
+			if new_label == pred_labels[0]:
+				task_accuracies[i] += 1
+
+		predictions.append(instance_predictions)
+
+	if debug:
+		for debug_file in debug_files:
+			debug_file.close()
+
+	print '---Done.'
+
+	task_accuracies = [score/len(instances) for score in task_accuracies]
+
+	return predictions, task_accuracies
+
+def hamming(list1, list2):
+	'''
+	Calculate the Hamming distance between two lists.
+
+	'''
+	return sum([i != j for i,j in zip(list1, list2)])
+
+def euclidian(list1, list2):
+	'''
+	Calculate the Euclidian distance between two lists.
+
+	'''
+	return math.sqrt(sum((i - j)**2 for i, j in zip(list1, list2)))
+
+def decode(prediction, codewords, mode=euclidian):
+	'''
+	Decode a prediction against a dictionary of codewords.
+
+	'''
+	distances = sorted([(label, mode(prediction, codeword)) for label, codeword in codewords.items()], key=operator.itemgetter(1))
+	at_minimum = [label for (label, distance) in distances if distance == distances[0][1]]
+
+	return at_minimum
+
+def evaluate(predictions, codewords, label_map, output_file):
+	'''
+	Given a list of predictions by all dichotomizers, decode the label using the
+	codewords and write the decoded labels followed by the predictions to
+	output_file.
+
+	'''
+	if not os.path.exists(os.path.split(output_file)[0]):
+		os.makedirs(os.path.split(output_file)[0])
+
+	pred_labels = []
+	with open(output_file, 'w') as fout:
+		for i, prediction in enumerate(predictions):
+			labels = decode(prediction, codewords, euclidian)
+			if len(labels) > 1:
+				print '---Warning, multiple possible labels for instance {0}: {1}'.format(i, ' '.join(labels))
+				shuffle(labels)
+			pred_labels.append(labels[0])
+			fout.write('{0}\t{1}\n'.format(label_map[labels[0]], '\t'.join(map(str, prediction))))
+	return pred_labels
+
+def concatenate(output_files, results_folder):
+	'''
+	Returns the location of concatenated test and predictions files.
+	Takes test and predictions files for each fold and concatenates them.
+
+	'''
+	test_files, predictions_files = zip(*output_files)
+	cat_test_file = os.path.join(results_folder, os.path.basename(test_files[0]))
+	cat_predictions_file = os.path.join(results_folder, os.path.basename(predictions_files[0]))
+
+	with open(cat_test_file, 'w') as fout:
+		for test_file in test_files:
+			with open(test_file, 'r') as fin:
+				fout.write(fin.read())
+	print 'Test instances written to {0}'.format(cat_test_file)
+	with open(cat_predictions_file, 'w') as fout:
+		for predictions_file in predictions_files:
+			with open(predictions_file, 'r') as fin:
+				fout.write(fin.read())
+	print 'Predictions written to {0}'.format(cat_predictions_file)
+
+	return cat_test_file, cat_predictions_file
+
 def correlate(test_file, matrix, predictions_file):
 	'''
-	Given a test file, a codeword matrix and a file with dichotomizer predictions,
-	see which dichotomizer was right or wrong where. Then calculate the correlation
-	between dichotomizers according to Qav (see Kuncheva and Whitaker 2003).
+	Given a test file, a codeword matrix and a file with dichotomizer
+	predictions, see which dichotomizer was right or wrong where. Then calculate
+	the correlation between dichotomizers according to Qav (see Kuncheva and
+	Whitaker 2003).
 
 	'''
 	with open(test_file, 'r') as fin:
 		correct = [matrix[line.strip().split('\t')[-1]] for line in fin.readlines() if line.strip()]
 	with open(predictions_file, 'r') as fin:
-		probabilities = [map(float, line.strip().split('\t')) for line in fin.readlines() if line.strip()]
+		probabilities = [map(float, line.strip().split('\t')[1:]) for line in fin.readlines() if line.strip()]
 	assert len(correct) == len(probabilities)
 
 	results = [[] for _ in range(len(probabilities[0]))]
@@ -517,7 +589,7 @@ def correlate(test_file, matrix, predictions_file):
 
 	return q_av
 
-def main(instance_folder, results_folder, ecoc_type='dietterich', pattern=None, params={'-c': 1}, reuse_models=False):
+def main(instance_folder, results_folder, ecoc_type='dietterich', pattern=None, param_file='params.xml', reuse_models=False):
 	'''
 	Returns a list of lists of predicted labels (per fold).
 
@@ -575,12 +647,14 @@ def main(instance_folder, results_folder, ecoc_type='dietterich', pattern=None, 
 		# Train classifiers for each fold/task.
 		for i, (train_file, test_file) in enumerate(instance_files):
 			print 'Training fold {0}/{1}'.format(i+1, len(instance_files))
-			models = trainTasks(train_file, tasks, i, output_folder=results_folder, params=params)
+			models = trainTasks(train_file, tasks, i, output_folder=results_folder, param_file=param_file)
 			model_files.append(models)
 	else:
 		print 'Using existing models.'
 
 	predicted_labels = []
+	output_files = []
+	all_task_accuracies = [0.0 for _ in range(len(tasks))]
 	# Test each task for each fold.
 	for i, (instance_file_pair, fold_models) in enumerate(zip(instance_files, model_files)):
 
@@ -588,16 +662,30 @@ def main(instance_folder, results_folder, ecoc_type='dietterich', pattern=None, 
 
 		# Classify!
 		print 'Classifying fold {0}/{1}'.format(i+1, len(instance_files))
-		predictions, task_accuracies = getPredictions(test_file, tasks, fold_models)
+		predictions, task_accuracies = getPredictions(test_file, tasks, fold_models, i)
+		for j, task_accuracy in enumerate(task_accuracies):
+			 all_task_accuracies[j] += task_accuracy
 
 		# Decode the predictions into the actual class labels.
 		output_file = os.path.join(results_folder, 'fold-{0:02d}'.format(i+1), os.path.basename(test_file) + '.predictions')
 		fold_predicted_labels = evaluate(predictions, matrix, labels, output_file)
 		predicted_labels.append(fold_predicted_labels)
+		output_files.append((test_file, output_file))
+
+	# Average the dichotomizer accuracies across folds, write a report file
+	all_task_accuracies = [task_accuracy/len(instance_files) for task_accuracy in all_task_accuracies]
+	task_acc_file = os.path.join(results_folder, os.path.basename(instance_files[0][1]) + '.accuracies')
+	with open(task_acc_file, 'w') as fout:
+		for i, task_accuracy in enumerate(all_task_accuracies):
+			fout.write('Dichotomizer {0:02d}\t{1}:\t{2}\n'.format(i+1, tasks[i], task_accuracy))
+	print 'Dichotomizer accuracies written to {0}'.format(task_acc_file)
+
+	concatenate(output_files, results_folder)
 
 	return predicted_labels
 
 if __name__ == '__main__':
+
 	parser = OptionParser(usage = '''
 python %prog instance_folder (options)
 
@@ -613,8 +701,8 @@ the resulting labels and probabilities to output_folder/fold-XX/*.predictions.''
 						help="Specify the type of ECOC matrix you want to use. (Available: 'dietterich' (default), 'hadamard', 'onevsall')")
 	parser.add_option('-c', '--classifier', dest='classifier', default='libsvm',
 						help="Specify the classifier you want to use. (Available: 'libsvm' (default), 'liblinear')")
-	parser.add_option('-p', '--params', dest='params', default='c=1',
-						help="Specify the classifier parameters you want to use. Format: c=1/g=1/... (Default: c=1)")
+	parser.add_option('-p', '--param-file', dest='param_file', default='params.xml',
+						help="Specify the location of the XML file containing the dichotomizer parameters you want to use. (Default: params.xml)")
 	parser.add_option('-f', '--force-reuse', dest='reuse_models', default=False, action='store_true',
 						help="Use this option to force the re-use of model files if they already exist. It is YOUR responsibility to make sure these model files match your test instances!")
 	(options, args) = parser.parse_args()
@@ -627,8 +715,6 @@ the resulting labels and probabilities to output_folder/fold-XX/*.predictions.''
 		output_folder = input_folder
 	else:
 		output_folder = options.output_folder
-
-	params = dict([(('-'+param.lstrip('-')).split('=')) for param in options.params.split('/')])
 
 	if options.classifier == 'libsvm':
 		sys.path.insert(0, os.path.join(libsvmpath, 'python'))
@@ -644,5 +730,8 @@ the resulting labels and probabilities to output_folder/fold-XX/*.predictions.''
 		from liblinearutil import save_model
 		from liblinearutil import load_model
 		from liblinearutil import predict
+	else:
+		sys.exit('Unknown classifier "{0}".\nAllowed: "liblinear", "libsvm".'.format(options.classifier))
+	classifier = options.classifier
 
-	main(input_folder, output_folder, ecoc_type=options.ecoc_type, pattern=options.pattern, params=params, reuse_models=options.reuse_models)
+	main(input_folder, output_folder, ecoc_type=options.ecoc_type, pattern=options.pattern, param_file=options.param_file, reuse_models=options.reuse_models)
